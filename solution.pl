@@ -2,6 +2,7 @@
 :- use_module(library(lists)).
 
 % Define the dynamic variables as follows
+:- dynamic start/2.
 :- dynamic covid/2. % - covid(X, Y) - covids' coordinates
 :- dynamic home/2. % - home(X, Y) - home's coordinates
 :- dynamic mask/2. % - mask(X, Y) - mask's coordinates
@@ -23,6 +24,11 @@ start(0, 0). % Starting position, default is (0, 0)
 %home(6, 3).
 %mask(5, 4).
 %doctor(6, 7).
+%covid(5,7).
+%covid(8,6).
+%doctor(3,2).
+%mask(8,4).
+%home(8,8).
 % -----------------
 
 % Home generation function, that can spawn a home anywhere within the borders
@@ -91,6 +97,11 @@ print_path([(X, Y)]) :-
 print_path([(X, Y) | Remainder]) :-
     print((X, Y)), write(" -> "),
     print_path(Remainder).
+
+% Util function that merges two pathes into one
+merge_path([], L, L).
+merge_path([H | T], L, [H | M]):-
+    merge_path(T, L, M).
 
 % Returns the shortest path from an array of all pathes
 shortest_path(Pathes, Path) :-
@@ -168,14 +179,37 @@ g_function(X, Y, G) :-
     % Calculate the G from the starting cell otherwise
     (start(XS, YS), G is abs(XS - Y) + abs(YS - Y)).
 
-% Star point of A* search
-astar_search(Path, Length) :-
-    start(XS, YS), home(XH, YH), retractall(has_mask(_)), assert(has_mask(0)), % Define the initial conditions
+% Start point of several A* searches to find the best path
+a_star_best(Path, Length) :-
+    start(XS, YS), home(XH, YH), mask(XM, YM), doctor(XD, YD),
+    astar_search(PathSH), % Run A* from start to home 
+    retractall(start(_, _)), assert(start(XM, YM)),
+    (astar_search([ (_, _) | PathMH ]); true), % Run A* from mash to home, and discard the first entry
+    retractall(start(_, _)), assert(start(XD, YD)),
+    (astar_search([ (_, _) | PathDH ]); true), % Run A* from doctor to home, and discard the first entry
+    
+    retractall(start(_, _)), assert(start(XS, YS)),
+    retractall(home(_, _)), assert(home(XM, YM)),
+    (astar_search(PathSM); true), % Run A* from start to mask
+    retractall(home(_, _)), assert(home(XD, YD)),
+    (astar_search(PathSD); true), % Run A* from start to doctor
+    
+    retractall(home(_, _)), assert(home(XH, YH)), % Set start and home to the original values
+    merge_path(PathSM, PathMH, PathTM), % Merge pathes from start to mask and from mask to home
+    merge_path(PathSD, PathDH, PathTD), % Merge pathes from start to doctor and from doctor to home
+    shortest_path([PathSH, PathTM, PathTD], Path), % Choose the best path from the two merged and from start to home
+    length(Path, Length). % Determine the length of the best path
+
+% Start point of a single A* search
+astar_search(Path) :-
+    start(XS, YS), home(XH, YH),
+    retractall(predecessor(_, _)),
+    retractall(has_mask(_)), assert(has_mask(0)), % Define the initial conditions
 	g_function(XS, YS, GS), h_function(XS, YS, HS), FS is GS + HS,% Calculate the G, H and F for the starting cell
+    retractall(op_list(_, _, _, _, _)), retractall(cl_list(_, _, _, _, _)),
     assert(op_list(XS, YS, GS, HS, FS)), % Update the opened list with the starting cell, and its G, H, and F values
     astar_find(_), % Start recursive A* search
-    get_path((XS, YS), (XH, YH), Path), % Get the resulting path from the sequence of predecessors
-    length(Path, Length). % Determine the length of the found path
+    get_path((XS, YS), (XH, YH), Path). % Get the resulting path from the sequence of predecessors
 
 % Util function that returns a path from a sequence of predecessors
 get_path((X, Y), (X, Y), [(X, Y)]).
@@ -246,6 +280,7 @@ explore_neighbours(X, Y, G, H, F):-
         retract(predecessor((_, _), (XN, YN))), % Retract the previous predecessor
         assert(predecessor((X, Y), (XN, YN))) % Set the current cell as a new predecessor
     )),
+    
     explore_neighbours(X, Y, G, H, F). % Recursive call
     
 % Test function
@@ -268,7 +303,7 @@ test :-
     % Run A* search to determine the Path, Length, and Execution time
     write("*** A* result ***"), nl,
     statistics(runtime, [AST | _]),
-    ((astar_search(APath, ALength),
+    ((a_star_best(APath, ALength),
       statistics(runtime, [AET | _]),
       AT is abs(AET - AST),
       write("Path: "), print_path(APath),
@@ -287,3 +322,5 @@ test :-
       write("Length: "), print(BLength), nl,
       write("Execution time: "), print(BT), write(" ms"), nl
     ); write("Path not found"), nl).
+    
+    halt(0).
