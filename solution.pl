@@ -19,16 +19,11 @@ start(0, 0). % Starting position, default is (0, 0)
 % Insert your input predicates between the lines if you do not want the map to generate randomly.
 % Do not forget to comment the generation map code in the test function
 % -----------------
-%covid(1, 1).
-%covid(2, 7).
-%home(6, 3).
-%mask(5, 4).
-%doctor(6, 7).
-%covid(5,7).
-%covid(8,6).
-%doctor(3,2).
-%mask(8,4).
-%home(8,8).
+covid(3, 0).
+covid(1, 3).
+mask(3, 3).
+doctor(7, 8).
+home(6, 2).
 % -----------------
 
 % Home generation function, that can spawn a home anywhere within the borders
@@ -112,6 +107,12 @@ shortest_path(Pathes, Path) :-
 mapping(Elem, L-Elem) :-
         length(Elem, L).
 
+dummy_path(N, L):- 
+  findall(Num, between(1, N, Num), L).
+
+not_instantiated(X):-
+  \+ (\+ (X = 0)), \+ (\+ (X = 1)).
+
 % Backtracking search %
 
 :- dynamic bt_best_length/1. % - bt_best_length(Length) - stores the current found best length 
@@ -181,24 +182,28 @@ g_function(X, Y, G) :-
 
 % Start point of several A* searches to find the best path
 a_star_best(Path, Length) :-
-    start(XS, YS), home(XH, YH), mask(XM, YM), doctor(XD, YD),
-    astar_search(PathSH), % Run A* from start to home 
+    start(XS, YS), home(XH, YH), mask(XM, YM), doctor(XD, YD), size(XSize, YSize), SS is XSize * YSize,
+    (astar_search(PathSH); dummy_path(SS, PathSH)), % Run A* from start to home 
     retractall(start(_, _)), assert(start(XM, YM)),
     (astar_search([ (_, _) | PathMH ]); true), % Run A* from mash to home, and discard the first entry
     retractall(start(_, _)), assert(start(XD, YD)),
     (astar_search([ (_, _) | PathDH ]); true), % Run A* from doctor to home, and discard the first entry
-    
     retractall(start(_, _)), assert(start(XS, YS)),
     retractall(home(_, _)), assert(home(XM, YM)),
-    (astar_search(PathSM); true), % Run A* from start to mask
+    (astar_search(PathSM); dummy_path(SS, PathSM)), % Run A* from start to mask
     retractall(home(_, _)), assert(home(XD, YD)),
-    (astar_search(PathSD); true), % Run A* from start to doctor
+    (astar_search(PathSD); dummy_path(SS, PathSD)), % Run A* from start to doctor
     
     retractall(home(_, _)), assert(home(XH, YH)), % Set start and home to the original values
     merge_path(PathSM, PathMH, PathTM), % Merge pathes from start to mask and from mask to home
     merge_path(PathSD, PathDH, PathTD), % Merge pathes from start to doctor and from doctor to home
+    
+    length(PathSH, LengthSH), length(PathTM, LengthTM), length(PathTD, LengthTD),
+    ((LengthSH < SS, LengthTM < SS, LengthTD < SS); !),
+    
     shortest_path([PathSH, PathTM, PathTD], Path), % Choose the best path from the two merged and from start to home
     length(Path, Length). % Determine the length of the best path
+    
 
 % Start point of a single A* search
 astar_search(Path) :-
@@ -286,10 +291,10 @@ explore_neighbours(X, Y, G, H, F):-
 % Test function
 test :-
     % Uncomment the four lines below if you want the map to generate randomly
-    generate_home,
-    generate_covids,
-    generate_mask,
-   	generate_doctor,
+    %generate_home,
+    %generate_covids,
+    %generate_mask,
+   	%generate_doctor,
     bagof((X, Y), home(X, Y), Homes), % Get home's position
     bagof((X, Y), covid(X, Y), Covids), % Get covids' positions
     bagof((X, Y), mask(X, Y), Masks), % Get mask's position
@@ -304,10 +309,12 @@ test :-
     write("*** A* result ***"), nl,
     statistics(runtime, [AST | _]),
     ((a_star_best(APath, ALength),
+      size(XS, YS), SS is XS * YS, ALength =\= SS,
       statistics(runtime, [AET | _]),
       AT is abs(AET - AST),
       write("Path: "), print_path(APath),
-      write("Length: "), print(ALength), nl,
+      ASteps is ALength - 1,
+      write("Length: "), print(ASteps), nl,
       write("Execution time: "), print(AT), write(" ms"), nl
     ); write("Path not found"), nl),
     nl,
@@ -319,8 +326,9 @@ test :-
       statistics(runtime, [BET | _]),
       BT is abs(BET - BST),
       write("Path: "), print_path(BPath),
-      write("Length: "), print(BLength), nl,
+      BSteps is BLength - 1, 
+      write("Steps: "), print(BSteps), nl,
       write("Execution time: "), print(BT), write(" ms"), nl
     ); write("Path not found"), nl).
     
-    halt(0).
+   halt(0).
